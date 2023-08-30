@@ -1209,10 +1209,7 @@ int sync_tx(struct bladerf_sync *s,
                                    samples2bytes(s, samples_to_copy));
 
                             s->meta.curr_msg_off += samples_to_copy;
-                            if (s->stream_config.layout == BLADERF_RX_X2)
-                               s->meta.curr_timestamp += samples_to_copy / 2;
-                            else
-                               s->meta.curr_timestamp += samples_to_copy;
+                            s->meta.curr_timestamp += samples_to_copy / s->meta.samples_per_ts;
 
                             samples_written += samples_to_copy;
 
