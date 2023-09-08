@@ -261,7 +261,14 @@ begin
                    if( meta_current.dma_downcount <= NUM_STREAMS ) then
                        -- Look for 2 because of the 2 cycles passing
                        -- through META_LOAD and META_WAIT after this.
-                       meta_future.state <= META_LOAD;
+                       -- 8bit format requires an additional delay.
+                       if( eight_bit_mode_en = '1' ) then
+                           if( fifo_current.eight_bit_sample_sel = '1' and fifo_current.samples_left = 0 ) then
+                               meta_future.state <= META_LOAD;
+                           end if;
+                       else
+                           meta_future.state <= META_LOAD;
+                       end if;
                    end if;
                 else
                    if( fifo_current.packet_control.data_valid = '1') then
