@@ -305,7 +305,13 @@ bool check_total_sample_rate(struct bladerf *dev)
     bladerf_sample_rate rate_accum = 0;
     size_t active_channels         = 0;
 
-    const bladerf_sample_rate MAX_SAMPLE_THROUGHPUT = 80000000;
+    bladerf_sample_rate MAX_SAMPLE_THROUGHPUT = 80000000;
+
+    if (dev->backend->config_gpio_read(dev, &reg) == 0) {
+        if (reg & BLADERF_GPIO_8BIT_MODE) {
+            MAX_SAMPLE_THROUGHPUT = 122880000;
+        }
+    }
 
     /* Read RFFE control register */
     status = dev->backend->rffe_control_read(dev, &reg);
