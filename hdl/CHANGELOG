@@ -6,6 +6,15 @@ hosted on GitHub: https://github.com/nuand/bladeRF
 ================================================================================
 
 --------------------------------
+v0.15.3 (2023-09-09)
+--------------------------------
+
+Fixes transmission with metadata when 8bit format is enabled.
+
+ Fixes:
+ *  hdl: fix meta delay for 8bit TX
+
+--------------------------------
 v0.15.2 (2023-06-26)
 --------------------------------
 
