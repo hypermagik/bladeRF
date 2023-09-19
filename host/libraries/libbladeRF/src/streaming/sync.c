@@ -185,12 +185,6 @@ int sync_init(struct bladerf_sync *sync,
             return BLADERF_ERR_INVAL;
     }
 
-    /* bladeRF GPIF DMA requirement */
-    if ((bytes_per_sample * buffer_size) % 4096 != 0) {
-        assert(!"Invalid buffer size");
-        return BLADERF_ERR_INVAL;
-    }
-
     /* Deinitialize sync handle if it's initialized */
     sync_deinit(sync);
 
