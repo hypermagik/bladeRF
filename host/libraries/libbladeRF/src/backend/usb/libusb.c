@@ -1388,14 +1388,22 @@ static int lusb_stream(void *driver, struct bladerf_stream *stream,
     }
     MUTEX_UNLOCK(&stream->lock);
 
-    /* This loop is required so libusb can do callbacks and whatnot */
-    while (stream->state != STREAM_DONE) {
-        status = libusb_handle_events_timeout(lusb->context, &tv);
+    if ((dev->feature & BLADERF_FEATURE_RX_ALL_EVENTS) == 0
+            || (layout & BLADERF_DIRECTION_MASK) == BLADERF_RX) {
+        /* This loop is required so libusb can do callbacks and whatnot */
+        while (stream->state != STREAM_DONE) {
+            status = libusb_handle_events_timeout(lusb->context, &tv);
 
-        if (status < 0 && status != LIBUSB_ERROR_INTERRUPTED) {
-            log_warning("unexpected value from events processing: "
-                        "%d: %s\n", status, libusb_error_name(status));
-            status = error_conv(status);
+            if (status < 0 && status != LIBUSB_ERROR_INTERRUPTED) {
+                log_warning("unexpected value from events processing: "
+                            "%d: %s\n", status, libusb_error_name(status));
+                status = error_conv(status);
+            }
+        }
+    } else {
+        /* The other stream does the event handling for us */
+        while (stream->state != STREAM_DONE) {
+            sleep(1);
         }
     }
 

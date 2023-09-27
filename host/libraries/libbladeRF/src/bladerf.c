@@ -1968,6 +1968,12 @@ int bladerf_enable_feature(struct bladerf *dev, bladerf_feature feature, bool en
                 log_error("BladeRF2 required for OVERSAMPLE feature\n");
                 status = BLADERF_ERR_UNSUPPORTED;
             }
+        } else if (feature == BLADERF_FEATURE_RX_ALL_EVENTS) {
+            if (enable) {
+                log_info("Rx stream will handle all libusb events.\n");
+            } else {
+                log_info("Both Rx and Tx streams will handle libusb events.\n");
+            }
         } else {
             /* Unknown / Unsupported feature */
             status = BLADERF_ERR_UNSUPPORTED;
