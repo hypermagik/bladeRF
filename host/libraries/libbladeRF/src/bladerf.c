@@ -2112,6 +2112,7 @@ static const char *feature2str(bladerf_feature feature)
     switch (feature) {
         case BLADERF_FEATURE_DEFAULT: return "DEFAULT";
         case BLADERF_FEATURE_OVERSAMPLE: return "OVERSAMPLE";
+        case BLADERF_FEATURE_RX_ALL_EVENTS: return "RX ALL EVENTS";
         default: return "UNKNOWN FEATURE";
     }
 }
@@ -2130,6 +2131,14 @@ int bladerf_enable_feature(struct bladerf *dev, bladerf_feature feature, bool en
     log_verbose("%s feature %s\n", enable ? "Enabling" : "Disabling", feature2str(feature));
     int status = 0;
     CHECK_NULL(dev);
+
+    if (feature == BLADERF_FEATURE_RX_ALL_EVENTS) {
+        if (enable) {
+            log_info("Rx stream will handle all libusb events.\n");
+        } else {
+            log_info("Both Rx and Tx streams will handle libusb events.\n");
+        }
+    }
 
     const char *board_name = bladerf_get_board_name(dev);
 
