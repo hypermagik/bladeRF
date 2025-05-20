@@ -2198,6 +2198,36 @@ typedef enum {
     BLADERF_FORMAT_SC16_Q11_META,
 
     /**
+     * This format is the same as the ::BLADERF_FORMAT_SC16_Q11_PACKED format, except
+     * the first 32 bytes in every <i>block*</i> of samples are replaced with
+     * metadata organized as follows. All fields are little-endian byte order.
+     *
+     * <pre>
+     *  .-------------.------------.----------------------------------.
+     *  | Byte offset |   Type     | Description                      |
+     *  +-------------+------------+----------------------------------+
+     *  |    0x00     | uint16_t   | Reserved                         |
+     *  |    0x02     |  uint8_t   | Stream flags                     |
+     *  |    0x03     |  uint8_t   | Meta version ID                  |
+     *  |    0x04     | uint64_t   | 64-bit Timestamp                 |
+     *  |    0x0c     | uint32_t   | BLADERF_META_FLAG_* flags        |
+     *  |  0x10..0x1f | uint128_t  | padding                          |
+     *  |  0x20..end  |            | Payload                          |
+     *  `-------------`------------`----------------------------------`
+     * </pre>
+     *
+     * For IQ sample meta mode, the Meta version ID and Stream flags should
+     * currently be set to values 0x00 and 0x00, respectively.
+     *
+     * The user is responsible for manually packing/unpacking the above
+     * metadata into/from their samples.
+     *
+     * @see STREAMING_FORMAT_METADATA
+     * @see The `src/streaming/metadata.h` header in the libbladeRF codebase.
+     */
+    BLADERF_FORMAT_SC16_Q11_PACKED_META,
+
+    /**
      * This format is for exchanging packets containing digital payloads with
      * the FPGA. A packet is generall a digital payload, that the FPGA then
      * processes to either modulate, demodulate, filter, etc.

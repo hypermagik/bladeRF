@@ -173,6 +173,11 @@ int sync_init(struct bladerf_sync *sync,
         }
     }
 
+    if (format == BLADERF_FORMAT_SC16_Q11_PACKED_META) {
+        log_error("Sync interface does not support SC16_Q11_PACKED_META format.\n");
+        return BLADERF_ERR_UNSUPPORTED;
+    }
+
     status = dev->board->get_fw_version(dev, &fx3_version);
     if (status != 0) {
         log_error("Failed to get FX3 firmware version: %s\n",

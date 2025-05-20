@@ -47,6 +47,7 @@ entity fx3_gpif is
     rx_enable           :   out std_logic;
     meta_enable         :   in  std_logic;
     packet_enable       :   in  std_logic;
+    hpm_enable          :   in  std_logic;
 
     -- TX FIFO
     tx_fifo_write       :   out std_logic;
@@ -91,8 +92,9 @@ architecture sample_shuffler of fx3_gpif is
         end if;
     end function;
 
-    type state_t        is (IDLE, SETUP_RD, META_READ, SAMPLE_READ, SETUP_WR,
-                            META_WRITE, SAMPLE_WRITE, SAMPLE_WRITE_IGNORE,
+    type state_t        is (IDLE,
+                            SETUP_RD, META_READ, META_READ_PAD, SAMPLE_READ,
+                            SETUP_WR, META_WRITE, META_WRITE_IGNORE, SAMPLE_WRITE, SAMPLE_WRITE_IGNORE,
                             FINISHED);
     type gpif_mode_t    is (IDLE, RX, RX_META, RX_IGNORE,
                             TX, TX_META, TX_IGNORE);
@@ -144,6 +146,7 @@ architecture sample_shuffler of fx3_gpif is
         ack_downcount   :   integer range  0 to max(ACK_DOWNCOUNT_READ, ACK_DOWNCOUNT_WRITE);
         dma_downcount   :   integer range -1 to 65536;
         meta_downcount  :   integer range -1 to META_DOWNCOUNT_RESET;
+        pad_downcount   :   integer range -1 to META_DOWNCOUNT_RESET;
         fini_downcount  :   integer range  0 to FINI_DOWNCOUNT_RESET;
         tx_ts_plus32    :   unsigned(63 downto 0);
         meta_buf        :   std_logic_vector(127 downto 0);
@@ -169,6 +172,7 @@ architecture sample_shuffler of fx3_gpif is
         ack_downcount   =>  0,
         dma_downcount   =>  0,
         meta_downcount  =>  0,
+        pad_downcount   =>  0,
         fini_downcount  =>  0,
         tx_ts_plus32    =>  (others => '0'),
         meta_buf        =>  (others => '0'),
@@ -407,6 +411,7 @@ begin
                 future.gpif_mode        <= IDLE;
                 future.meta_buf         <= (others => '0');
                 future.meta_downcount   <= META_DOWNCOUNT_RESET;
+                future.pad_downcount    <= META_DOWNCOUNT_RESET;
                 future.fini_downcount   <= FINI_DOWNCOUNT_RESET;
                 future.finishing_rx   <= '0';
 
@@ -478,7 +483,11 @@ begin
 
                 -- After the meta is done, move on to the sample FIFO.
                 if (current.meta_downcount = 1) then
-                    future.state        <= SAMPLE_READ;
+                    if (hpm_enable = '1') then
+                        future.state   <= META_READ_PAD;
+                    else
+                        future.state   <= SAMPLE_READ;
+                    end if;
                     if (packet_enable = '1') then
                         future.dma_downcount <= to_integer(unsigned(current.meta_dword(15 downto 0))) - 1 +
                                                 to_integer(unsigned(std_logic_vector(current.meta_dword(0 downto 0))));
@@ -491,6 +500,18 @@ begin
                     future.dma_downcount    <= max(current.dma_downcount-1, -1);
                 end if;
                 future.meta_downcount   <= max(current.meta_downcount-1, -1);
+
+            when META_READ_PAD =>
+                -- Pad with zeros.
+                future.gpif_mode        <= RX_IGNORE;
+ 
+                -- After the padding is done, move on to the sample FIFO.
+                if (current.pad_downcount = 1) then
+                    future.state        <= SAMPLE_READ;
+                end if;
+
+                future.dma_downcount    <= max(current.dma_downcount-1, -1);
+                future.pad_downcount    <= max(current.pad_downcount-1, -1);
 
             when SAMPLE_READ =>
                 -- Service the sample FIFO.
@@ -566,10 +587,25 @@ begin
                         unsigned(current.meta_buf(31 downto 0) & current.meta_buf(63 downto 32)) > current.tx_ts_plus32)
                     then
                         future.meta_downcount <= META_DOWNCOUNT_RESET;
-                        future.state    <= SAMPLE_WRITE;
+                        if (hpm_enable = '1') then
+                            future.state    <= META_WRITE_IGNORE;
+                        else
+                            future.state    <= SAMPLE_WRITE;
+                        end if;
                     else
                         future.state    <= SAMPLE_WRITE_IGNORE;
                     end if;
+                end if;
+
+            when META_WRITE_IGNORE =>
+                -- Skip over padding
+                future.gpif_mode        <= TX_IGNORE;
+
+                future.dma_downcount    <= max(current.dma_downcount-1, -1);
+                future.pad_downcount    <= max(current.pad_downcount-1, -1);
+
+                if (current.pad_downcount = 1) then
+                    future.state        <= SAMPLE_WRITE;
                 end if;
 
             when SAMPLE_WRITE =>

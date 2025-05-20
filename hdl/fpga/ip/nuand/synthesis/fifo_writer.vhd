@@ -257,7 +257,11 @@ begin
         case meta_current.state is
             when IDLE =>
 
-                meta_future.dma_downcount <= dma_buf_size - 4;
+                if( highly_packed_mode_en = '1' ) then
+                    meta_future.dma_downcount <= dma_buf_size - 8;
+                else
+                    meta_future.dma_downcount <= dma_buf_size - 4;
+                end if;
 
                 if( fifo_enough ) then
                     if( packet_en = '1' ) then

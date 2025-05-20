@@ -76,6 +76,16 @@ static inline size_t bytes_to_sc16q11(size_t n_bytes)
     return n_bytes / sample_size;
 }
 
+/*
+ * Convert bytes to SC16Q11 samples
+ */
+static inline size_t bytes_to_sc16q11_packed(size_t n_bytes)
+{
+    const size_t sample_size = 3 * sizeof(int8_t);
+    assert((n_bytes % sample_size) == 0);
+    return n_bytes / sample_size;
+}
+
 /* Covert samples to bytes based upon the provided format */
 static inline size_t samples_to_bytes(bladerf_format format, size_t n)
 {
@@ -85,6 +95,7 @@ static inline size_t samples_to_bytes(bladerf_format format, size_t n)
             return sc8q7_to_bytes(n);
 
         case BLADERF_FORMAT_SC16_Q11_PACKED:
+        case BLADERF_FORMAT_SC16_Q11_PACKED_META:
             return sc16q11_packed_to_bytes(n);
 
         case BLADERF_FORMAT_SC16_Q11:
@@ -109,6 +120,9 @@ static inline size_t bytes_to_samples(bladerf_format format, size_t n)
             return bytes_to_sc8q7(n);
 
         case BLADERF_FORMAT_SC16_Q11_PACKED:
+        case BLADERF_FORMAT_SC16_Q11_PACKED_META:
+            return bytes_to_sc16q11_packed(n);
+
         case BLADERF_FORMAT_SC16_Q11:
         case BLADERF_FORMAT_SC16_Q11_META:
             return bytes_to_sc16q11(n);
