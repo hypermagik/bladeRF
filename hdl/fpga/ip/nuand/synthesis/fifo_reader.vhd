@@ -260,7 +260,11 @@ begin
                    packet_len := to_integer(unsigned(meta_current.meta_cache(15 downto 0)));
                    meta_future.dma_downcount <= packet_len - 1;
                 else
-                   meta_future.dma_downcount <= dma_buf_size - 4;
+                   if( highly_packed_mode_en = '1' ) then
+                      meta_future.dma_downcount <= dma_buf_size - 8;
+                   else
+                      meta_future.dma_downcount <= dma_buf_size - 4;
+                   end if;
                 end if;
 
                 if( (timestamp >= meta_current.meta_p_time or meta_current.meta_p_time = MAX_TIMESTAMP)

@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
+#include "libbladeRF.h"
 #include "log.h"
 
 #include "backend/usb/usb.h"
@@ -59,6 +60,14 @@ int async_init_stream(struct bladerf_stream **stream,
         log_error("Failed to get FX3 firmware version: %s\n",
                   bladerf_strerror(status));
         return status;
+    }
+
+    if (format == BLADERF_FORMAT_SC16_Q11_PACKED_META) {
+        if (dev->board->device_speed(dev) != BLADERF_DEVICE_SPEED_SUPER) {
+            log_error("SC16_Q11_PACKED_META format is only supported "
+                      "when device is running at SuperSpeed\n");
+            return BLADERF_ERR_UNSUPPORTED;
+        }
     }
 
     if (fx3_version.major <= FW_LARGER_BUFFER_VERSION.major &&

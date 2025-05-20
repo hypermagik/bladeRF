@@ -17,6 +17,7 @@
 *.orig
 .tmp_versions
 .dir-locals.el
+.cache
 GPATH
 GTAGS
 GRTAGS
