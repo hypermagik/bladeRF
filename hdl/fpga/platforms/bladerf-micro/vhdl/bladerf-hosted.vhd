@@ -291,6 +291,7 @@ begin
 
             meta_enable         =>  meta_en_pclk,
             packet_enable       =>  packet_en_pclk,
+            hpm_enable          =>  highly_packed_en_txrx,
             rx_enable           =>  rx_enable_pclk,
             tx_enable           =>  tx_enable_pclk,
 
