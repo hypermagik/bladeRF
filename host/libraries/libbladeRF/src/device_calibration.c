@@ -236,7 +236,7 @@ static int gain_cal_tbl_init(struct bladerf_gain_cal_tbl *tbl, uint32_t num_entr
     tbl->n_entries = num_entries;
     tbl->start_freq = 0;
     tbl->stop_freq = 0;
-    tbl->file_path_len = 4;
+    tbl->file_path_len = PATH_MAX;
 
     tbl->entries = malloc(num_entries * sizeof(struct bladerf_gain_cal_entry));
     if (tbl->entries == NULL) {
