@@ -679,7 +679,7 @@ int main(int argc, char** argv) {
 
     auto filtered = filter_gtest_args(argc, argv);
     const int argc_filt = filtered.size();
-    const char* argv_filt[argc_filt];
+    std::vector<const char*> argv_filt(argc_filt);
 
     // copy back into a c-style array for getopt_long
     for (size_t i = 0; i < filtered.size(); ++i) {
@@ -687,7 +687,7 @@ int main(int argc, char** argv) {
     }
 
     while (opt != -1) {
-        opt = getopt_long(argc_filt, const_cast<char* const*>(argv_filt), OPTARG, long_options, &opt_ind);
+        opt = getopt_long(argc_filt, const_cast<char* const*>(argv_filt.data()), OPTARG, long_options, &opt_ind);
 
         switch (opt) {
             case 'v':
