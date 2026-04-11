@@ -2373,6 +2373,8 @@ typedef enum {
     BLADERF_FORMAT_SC8_Q7_META,
 } bladerf_format;
 
+#define BLADERF_HAS_FORMAT_SC16_Q11_PACKED_META
+
 /**
  * Convert a sample format to a string suitable for printing
  *
@@ -4207,6 +4209,8 @@ typedef enum {
     BLADERF_FEATURE_OVERSAMPLE,     /**< Enforces AD9361 OC and 8bit mode */
     BLADERF_FEATURE_RX_ALL_EVENTS,  /**< Handle all events from Rx stream */
 } bladerf_feature;
+
+#define BLADERF_HAS_FEATURE_RX_ALL_EVENTS
 
 /**
  * Enables a feature.
