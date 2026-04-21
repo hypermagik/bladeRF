@@ -55,10 +55,10 @@ static void _clear_rffe_ctrl()
     reg = rffe_csr_read();
     reg &= ~(1 << RFFE_CONTROL_TXNRX);
     reg &= ~(1 << RFFE_CONTROL_ENABLE);
-    reg &= ~(1 << RFFE_CONTROL_RX_SPDT_1);
-    reg &= ~(1 << RFFE_CONTROL_RX_SPDT_2);
-    reg &= ~(1 << RFFE_CONTROL_TX_SPDT_1);
-    reg &= ~(1 << RFFE_CONTROL_TX_SPDT_2);
+    reg &= ~(RFFE_CONTROL_SPDT_MASK << RFFE_CONTROL_RX_SPDT_1);
+    reg &= ~(RFFE_CONTROL_SPDT_MASK << RFFE_CONTROL_RX_SPDT_2);
+    reg &= ~(RFFE_CONTROL_SPDT_MASK << RFFE_CONTROL_TX_SPDT_1);
+    reg &= ~(RFFE_CONTROL_SPDT_MASK << RFFE_CONTROL_TX_SPDT_2);
     reg &= ~(1 << RFFE_CONTROL_MIMO_RX_EN_0);
     reg &= ~(1 << RFFE_CONTROL_MIMO_TX_EN_0);
     reg &= ~(1 << RFFE_CONTROL_MIMO_RX_EN_1);
