@@ -467,6 +467,7 @@ static int _rfic_host_select_band(struct bladerf *dev,
 {
     struct bladerf2_board_data *board_data = dev->board_data;
     struct ad9361_rf_phy *phy              = board_data->phy;
+    bladerf_channel port_ch                = ch;
     uint32_t reg;
     size_t i;
 
@@ -478,8 +479,12 @@ static int _rfic_host_select_band(struct bladerf *dev,
     for (i = 0; i < 2; ++i) {
         bladerf_channel bch = BLADERF_CHANNEL_IS_TX(ch) ? BLADERF_CHANNEL_TX(i)
                                                         : BLADERF_CHANNEL_RX(i);
-        CHECK_STATUS(_modify_spdt_bits_by_freq(
-            &reg, bch, _rffe_ch_enabled(reg, bch), frequency));
+        bool enabled = _rffe_ch_enabled(reg, bch);
+
+        CHECK_STATUS(_modify_spdt_bits_by_freq(&reg, bch, enabled, frequency));
+        if (enabled) {
+            port_ch = bch;
+        }
     }
 
     /* Write RFFE control register */
@@ -487,7 +492,7 @@ static int _rfic_host_select_band(struct bladerf *dev,
 
     /* Set AD9361 port */
     CHECK_STATUS(
-        set_ad9361_port_by_freq(phy, ch, _rffe_ch_enabled(reg, ch), frequency));
+        set_ad9361_port_by_freq(phy, port_ch, _rffe_ch_enabled(reg, port_ch), frequency));
 
     return 0;
 }
