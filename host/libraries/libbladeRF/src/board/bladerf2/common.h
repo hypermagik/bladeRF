@@ -193,6 +193,7 @@ struct bladerf2_board_data {
 
 struct bladerf_rfic_status_register {
     bool rfic_initialized;
+    bool write_queue_success;
     size_t write_queue_length;
 };
 
@@ -220,6 +221,20 @@ int rfic_host_finish_tx_recal_update(
     struct rfic_host_tx_recal_state const *tx_recal,
     int status,
     char const *update);
+
+/**
+ * Ask the FPGA RFIC controller to disconnect TX before an RFIC update that can
+ * retrigger TX recalibration state.
+ */
+int rfic_fpga_start_tx_recal_update(struct bladerf *dev);
+
+/**
+ * Ask the FPGA RFIC controller to restore TX after an RFIC update that can
+ * retrigger TX recalibration state.
+ */
+int rfic_fpga_finish_tx_recal_update(struct bladerf *dev,
+                                     int status,
+                                     char const *update);
 
 
 /******************************************************************************/
