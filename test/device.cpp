@@ -31,6 +31,11 @@ void device_init() {
   CHECK(bladerf_set_rfic_rx_fir(device, bladerf_rfic_rxfir::BLADERF_RFIC_RXFIR_DEFAULT));
   CHECK(bladerf_set_rfic_tx_fir(device, bladerf_rfic_txfir::BLADERF_RFIC_TXFIR_DEFAULT));
 
+  if (oversample) {
+    LOG("Enabling BLADERF_FEATURE_OVERSAMPLE...");
+    CHECK(bladerf_enable_feature(device, bladerf_feature::BLADERF_FEATURE_OVERSAMPLE, true));
+  }
+
   bladerf_sample_rate rf_actual_rate;
   bladerf_bandwidth rf_actual_bw;
 
@@ -108,7 +113,8 @@ void device_init() {
   LOG("Rx samples per buffer: %u, valid Rx samples per buffer: %u", rx.samples_per_buffer, rx.valid_samples_per_buffer);
   LOG("Tx samples per buffer: %u, valid Tx samples per buffer: %u", tx.samples_per_buffer, tx.valid_samples_per_buffer);
 
-  skip_buffers = start_delay * rate / rx.valid_samples_per_buffer / rx.nof_streams;
+  // Only the Rx callback counts skipped buffers down, so skip nothing without Rx
+  skip_buffers = rx.nof_streams > 0 ? start_delay * rate / rx.valid_samples_per_buffer / rx.nof_streams : 0;
 
   if (rx.nof_streams > 0) {
     LOG("Initializing Rx stream...");

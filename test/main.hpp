@@ -17,6 +17,7 @@ inline bool has_meta = false;
 inline unsigned bytes_per_sample = 0;
 inline bool rx_all_events = false;
 inline bladerf_rx_mux rx_mux = bladerf_rx_mux::BLADERF_RX_MUX_12BIT_COUNTER;
+inline bool oversample = false;
 inline bool tx_timestamps = false;
 inline unsigned duration = 5;
 inline int skip_buffers = 0;

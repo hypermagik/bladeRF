@@ -13,6 +13,7 @@ static const struct option long_options[] = {
     {"rx-streams", required_argument, NULL, 'r'},
     {"tx-streams", required_argument, NULL, 't'},
     {"sync-tx", no_argument, NULL, 's'},
+    {"oversample", no_argument, NULL, 'o'},
     {"verbose", no_argument, NULL, 'v'},
     {"buf-verbose", required_argument, NULL, 'V'},
     {"help", no_argument, NULL, 'h'},
@@ -34,6 +35,7 @@ static void usage(const char *argv0) {
   printf("                              <0|1 (default)|2>\n");
   printf("  -t, --tx-streams <n>      Number of Tx streams\n");
   printf("                              <0|1 (default)|2>\n");
+  printf("  -o, --oversample          Enable oversample feature (rates up to 122.88 MHz)\n");
   printf("  -s, --sync-tx             Use timestamps for transmission\n");
   printf("  -v, --verbose             Enable verbose bladeRF log level\n");
   printf("  -V, --buf-verbose <n>     Set verbosity for first n buffers\n");
@@ -44,7 +46,7 @@ void parse_opts(int argc, char **argv) {
   int opt = 0;
   int opt_ind = 0;
   while (opt != -1) {
-    opt = getopt_long(argc, argv, "d:S:B:R:T:r:t:sv:V:h", long_options, &opt_ind);
+    opt = getopt_long(argc, argv, "d:S:B:R:T:r:t:sov:V:h", long_options, &opt_ind);
 
     switch (opt) {
     case 'd':
@@ -93,6 +95,9 @@ void parse_opts(int argc, char **argv) {
         printf("Invalid number of Tx streams: %u\n", tx.nof_streams);
         exit(1);
       }
+      break;
+    case 'o':
+      oversample = true;
       break;
     case 's':
       tx_timestamps = true;
