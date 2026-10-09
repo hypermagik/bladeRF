@@ -94,6 +94,7 @@ architecture hosted_bladerf of bladerf is
     signal eightbit_en_rx         : std_logic;
 
     signal highly_packed_en_txrx  : std_logic;
+    signal highly_packed_en_pclk  : std_logic;
 
     signal packet_en_pclk         : std_logic;
     signal packet_en_tx           : std_logic;
@@ -291,7 +292,7 @@ begin
 
             meta_enable         =>  meta_en_pclk,
             packet_enable       =>  packet_en_pclk,
-            hpm_enable          =>  highly_packed_en_txrx,
+            hpm_enable          =>  highly_packed_en_pclk,
             rx_enable           =>  rx_enable_pclk,
             tx_enable           =>  tx_enable_pclk,
 
@@ -873,6 +874,17 @@ begin
             clock               =>  ad9361.clock,
             async               =>  nios_gpio.o.highly_packed_en,
             sync                =>  highly_packed_en_txrx
+        );
+
+    U_sync_highly_packed_en_pclk : entity work.synchronizer
+        generic map (
+            RESET_LEVEL         =>  '0'
+        )
+        port map (
+            reset               =>  '0',
+            clock               =>  fx3_pclk_pll,
+            async               =>  nios_gpio.o.highly_packed_en,
+            sync                =>  highly_packed_en_pclk
         );
 
     U_sync_packet_en_pclk : entity work.synchronizer
