@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10...3.27)
 
 option(BUILD_BLADERF_FSK "Build bladeRF FSK" ON)
+option(BUILD_BLADERF_UPDATE "Build bladeRF-update (requires libcurl on non-Windows platforms)" OFF)
 
 if(NOT IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bladeRF-fsk/c)
     message(STATUS "bladeRF-fsk: Attempting to initialize missing submodule")
@@ -27,7 +28,9 @@ if(NOT IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bladeRF-fsk/c)
 endif()
 
 add_subdirectory(bladeRF-cli)
-add_subdirectory(bladeRF-update)
+if(BUILD_BLADERF_UPDATE)
+    add_subdirectory(bladeRF-update)
+endif()
 if(NOT MSVC)
     add_subdirectory(bladeRF-power)
     if(BUILD_BLADERF_FSK)
@@ -80,6 +83,9 @@ if(INSTALL_SHELL_COMPLETIONS AND UNIX)
     
     # Install completion files
     file(GLOB BASH_COMPLETIONS ${CMAKE_CURRENT_SOURCE_DIR}/completions/bash/*)
+    if(NOT BUILD_BLADERF_UPDATE)
+        list(REMOVE_ITEM BASH_COMPLETIONS ${CMAKE_CURRENT_SOURCE_DIR}/completions/bash/bladeRF-update)
+    endif()
     file(GLOB ZSH_COMPLETIONS ${CMAKE_CURRENT_SOURCE_DIR}/completions/zsh/*)
     
     # Only install bash completions if the directory exists

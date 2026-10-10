@@ -18,7 +18,7 @@ else()
     set(LIBS ${LIBS} m)
 endif()
 
-include_directories(${INCLUDES} ${CURL_INCLUDE_DIR} include)
+include_directories(${INCLUDES} include)
 add_executable(${PROJECT_NAME} ${SRC})
 
 target_link_libraries(${PROJECT_NAME} ${LIBS})

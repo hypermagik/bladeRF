@@ -77,6 +77,7 @@ more information.
 | -DCMAKE_INSTALL_PREFIX=\</prefix/path\>   | Override system-specific path to install output files.  Default depends on system; see ```cmake -L```                              |
 | -DCMAKE_BUILD_TYPE=\<type\>               | Set <type> to "Debug" to enable a debug build. Default: "Release"                                                                  |
 | -DBUILD_DOCUMENTATION=\<ON/OFF\>          | Build libbladeRF API documentation and manpages for utilities. Default: OFF                                                        |
+| -DBUILD_BLADERF_UPDATE=\<ON/OFF\>         | Build the bladeRF-update utility. Requires libcurl development files on non-Windows platforms. Default: OFF                        |
 | -DCMAKE_C_COMPILER=\<compiler\>           | Specify the compiler to use. Otherwise, CMake will determine a default.                                                            |
 | -DENABLE_GDB_EXTENSIONS=\<ON/OFF\>        | GCC & GDB users may want to set this to use -ggdb3 instead of -g. Default: OFF                                                     |
 | -DENABLE_BACKEND_LIBUSB=\<ON/OFF\>        | Enables libusb backend in libbladeRF. Default: ON if libusb is available, OFF otherwise.                                           |
