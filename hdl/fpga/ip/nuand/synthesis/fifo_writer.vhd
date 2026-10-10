@@ -82,8 +82,6 @@ architecture simple of fifo_writer is
 
     type meta_state_t is (
         IDLE,
-        META_WRITE,
-        META_DOWNCOUNT,
         PACKET_WAIT_EOP
     );
 
@@ -109,9 +107,14 @@ architecture simple of fifo_writer is
     type fifo_state_t is (
         CLEAR,
         WRITE_SAMPLES,
-        WRITE_PACKET_PAYLOAD,
-        HOLDOFF
+        WRITE_PACKET_PAYLOAD
     );
+
+    -- Sample sets (one sample from each enabled channel) per DMA buffer. The
+    -- largest is 8-bit mode with one channel: 2 samples per 32-bit word.
+    constant UNITS_PER_BUF_MAX : natural := 2 * DMA_BUF_SIZE_SS;
+
+    signal units_per_buf       : natural range 1 to UNITS_PER_BUF_MAX := 1;
 
     type ch_offsets_t is array( natural range <> ) of natural range fifo_data'low to fifo_data'high;
 
@@ -125,7 +128,12 @@ architecture simple of fifo_writer is
         samples_left        : natural range 0 to in_sample_controls'length;
         in_sample_controls_r: sample_controls_t(0 to NUM_STREAMS-1);
         in_samples_r        : sample_streams_t(0 to NUM_STREAMS-1);
+        timestamp_r         : unsigned(timestamp'range);
         eight_bit_delay     : std_logic;
+        units_left          : natural range 0 to UNITS_PER_BUF_MAX;
+        dropping            : std_logic;
+        meta_write          : std_logic;
+        meta_ts             : unsigned(timestamp'range);
     end record;
 
     constant FIFO_FSM_RESET_VALUE : fifo_fsm_t := (
@@ -138,7 +146,12 @@ architecture simple of fifo_writer is
         samples_left        => 0,
         in_sample_controls_r=> (others => SAMPLE_CONTROL_DISABLE),
         in_samples_r        => (others => ZERO_SAMPLE),
-        eight_bit_delay     => '0'
+        timestamp_r         => (others => '0'),
+        eight_bit_delay     => '0',
+        units_left          => 0,
+        dropping            => '0',
+        meta_write          => '0',
+        meta_ts             => (others => '0')
     );
 
     signal fifo_current : fifo_fsm_t := FIFO_FSM_RESET_VALUE;
@@ -170,6 +183,50 @@ begin
             else
                 dma_buf_size <= DMA_BUF_SIZE_HS;
             end if;
+        end if;
+    end process;
+
+    -- Determine how many sample sets (one sample from each enabled channel) fit
+    -- in the payload of a DMA buffer. Metadata is written and samples are
+    -- dropped only on these boundaries, so the GPIF always pairs each meta
+    -- with the samples it describes and every buffer starts on a word (and,
+    -- in highly packed mode, a 3-word group) boundary.
+    calc_units_per_buf : process( clock, reset )
+        variable payload : natural range 0 to DMA_BUF_SIZE_SS;  -- 32-bit words
+        variable n_sets   : natural range 0 to UNITS_PER_BUF_MAX;
+    begin
+        if( reset = '1' ) then
+            units_per_buf <= 1;
+        elsif( rising_edge(clock) ) then
+            if( highly_packed_mode_en = '1' ) then
+                payload := dma_buf_size - 8;
+            else
+                payload := dma_buf_size - 4;
+            end if;
+
+            if( eight_bit_mode_en = '1' ) then
+                n_sets := 2 * payload;               -- 16 bits per sample
+            elsif( highly_packed_mode_en = '1' ) then
+                -- 24 bits per sample: 4/3 samples per word. Only the
+                -- SuperSpeed buffer size is a multiple of 3 words.
+                if( dma_buf_size = DMA_BUF_SIZE_SS ) then
+                    n_sets := (DMA_BUF_SIZE_SS - 8) * 4 / 3;
+                else
+                    n_sets := (DMA_BUF_SIZE_HS - 8) * 4 / 3;
+                end if;
+            else
+                n_sets := payload;                   -- 32 bits per sample
+            end if;
+
+            if( count_enabled_channels(fifo_current.in_sample_controls_r) = 2 ) then
+                n_sets := n_sets / 2;
+            end if;
+
+            if( n_sets = 0 ) then
+                n_sets := 1;
+            end if;
+
+            units_per_buf <= n_sets;
         end if;
     end process;
 
@@ -247,14 +304,10 @@ begin
 
         meta_future.meta_write <= '0';
         -- currently the GPIF modules overwrites the bottom 16 bits of the flags field
-        if( packet_en = '0' ) then
-           meta_future.meta_data  <= x"FFF" & "11" & sync_mini_exp & x"FFFF" & std_logic_vector(timestamp) & x"12344321";
-        else
-           packet_flags := packet_control.pkt_flags;
-           meta_future.meta_data  <= x"FFF" & "11" & sync_mini_exp & x"FFFF" & std_logic_vector(timestamp) &
-                          packet_control.pkt_core_id & packet_flags &
-                          std_logic_vector(to_unsigned(integer(meta_current.dma_downcount), 16));
-        end if;
+        packet_flags := packet_control.pkt_flags;
+        meta_future.meta_data  <= x"FFF" & "11" & sync_mini_exp & x"FFFF" & std_logic_vector(timestamp) &
+                       packet_control.pkt_core_id & packet_flags &
+                       std_logic_vector(to_unsigned(integer(meta_current.dma_downcount), 16));
 
 
         case meta_current.state is
@@ -283,50 +336,9 @@ begin
                              meta_future.dma_downcount <= 1;
                           end if;
                        end if;
-                    else
-                       meta_future.state  <= META_WRITE;
                     end if;
                 else
                     meta_future.meta_written <= '0';
-                end if;
-
-            when META_WRITE =>
-
-                for i in in_samples'range loop
-                    if (meta_fifo_full = '0' and in_samples(i).data_v = '1') then
-                        meta_future.meta_write <= '1';
-                        meta_future.meta_written <= '1';
-                        meta_future.state <= META_DOWNCOUNT;
-                    end if;
-                end loop;
-
-            when META_DOWNCOUNT =>
-
-                if( fifo_current.fifo_write = '1' and meta_current.meta_write = '0' ) then
-                    meta_future.dma_downcount <= meta_current.dma_downcount - NUM_STREAMS;
-                end if;
-
-                if( meta_current.dma_downcount <= 2 ) then
-                    -- Look for 2 because of the 2 cycles passing
-                    -- through IDLE and META_WRITE after this.
-                    -- 8bit format requires an additional 2 cycle delay.
-                    if( eight_bit_mode_en = '1' ) then
-                        if( fifo_future.eight_bit_delay = '1' and fifo_future.samples_left = 0) then
-                            meta_future.state <= IDLE;
-                        end if;
-                    else
-                        meta_future.state <= IDLE;
-                    end if;
-                end if;
-
-                -- Patches the late meta write for MIMO mode
-                if( in_sample_controls'length = 2 and
-                    in_sample_controls(0).enable = '1' and
-                    in_sample_controls(1).enable = '1' and
-                    eight_bit_mode_en = '0' and
-                    meta_current.dma_downcount <= NUM_STREAMS + 2 )
-                then
-                    meta_future.state <= IDLE;
                 end if;
 
             when PACKET_WAIT_EOP =>
@@ -347,17 +359,21 @@ begin
         end case;
 
         -- Abort?
-        if( (enable = '0') or (meta_en = '0') ) then
+        if( (enable = '0') or (meta_en = '0') or (packet_en = '0') ) then
             meta_future.meta_write    <= '0';
             meta_future.meta_written  <= '0';
             meta_future.state         <= IDLE;
         end if;
 
-        -- Output assignments
-        meta_fifo_write <= meta_current.meta_write;
-        meta_fifo_data  <= meta_current.meta_data;
-
     end process;
+
+    -- In packet mode the meta FSM above writes the metadata. In sample mode
+    -- the sample FIFO writer writes it at the start of each DMA buffer.
+    meta_fifo_write <= meta_current.meta_write when packet_en = '1' else
+                       fifo_current.meta_write;
+    meta_fifo_data  <= meta_current.meta_data when packet_en = '1' else
+                       x"FFF" & "11" & sync_mini_exp & x"FFFF" &
+                       std_logic_vector(fifo_current.meta_ts) & x"12344321";
 
 
     -- ------------------------------------------------------------------------
@@ -494,57 +510,94 @@ begin
             return rv;
         end function;
 
-        procedure handle_fifo_write(
-            signal fifo_current : in fifo_fsm_t;
-            signal meta_current : in meta_fsm_t;
-            signal meta_en : in std_logic;
-            signal eight_bit_mode_en : in std_logic;
-            variable write_req : out std_logic;
-            signal fifo_future : out fifo_fsm_t
+        -- --------------------------------------------------------------------
+        -- Accept one sample set (one sample from each enabled channel)
+        -- --------------------------------------------------------------------
+        -- Sample sets are counted per DMA buffer. The first one of a buffer
+        -- is only accepted if there is room for the whole buffer; it then
+        -- writes the buffer's metadata with its own timestamp. Otherwise
+        -- sample sets are dropped until there is room. Because drops only
+        -- happen on buffer boundaries, the packers are always empty and in
+        -- phase when they occur.
+        procedure accept_samples(
+            signal fifo_current : in  fifo_fsm_t;
+            signal fifo_future  : out fifo_fsm_t
         ) is
-            variable in_sample_controls : sample_controls_t(0 to NUM_STREAMS-1);
-            variable in_samples         : sample_streams_t(0 to NUM_STREAMS-1);
+            variable sc         : sample_controls_t(0 to NUM_STREAMS-1);
+            variable ss         : sample_streams_t(0 to NUM_STREAMS-1);
+            variable write_req  : std_logic;
+            variable buf_next   : unsigned(fifo_current.fifo_12b_buf'range);
         begin
-            in_sample_controls  := fifo_current.in_sample_controls_r;
-            in_samples          := fifo_current.in_samples_r;
+            sc := fifo_current.in_sample_controls_r;
+            ss := fifo_current.in_samples_r;
 
-            if( ((meta_current.meta_written = '1') or (meta_en = '0')) ) then
-                -- Check for valid data
-                write_req := '0';
-                for i in in_sample_controls'range loop
-                    if( in_sample_controls(i).enable = '1' ) then
-                        write_req := write_req or in_samples(i).data_v;
-                    end if;
-                end loop;
-
-                -- Received valid data
-                if( write_req = '1' ) then
-                    if( fifo_current.samples_left = 0 ) then
-                        fifo_future.samples_left <= NUM_STREAMS - count_enabled_channels(in_sample_controls);
-                        fifo_future.fifo_write <= write_req;
-
-                        if( eight_bit_mode_en = '1' ) then
-                            fifo_future.fifo_write <= write_req and fifo_current.eight_bit_delay;
-                            fifo_future.eight_bit_delay <= not fifo_current.eight_bit_delay;
-                        end if;
-
-                        if( highly_packed_mode_en = '1' ) then
-                            fifo_future.write_cycle <= (fifo_current.write_cycle + 1) mod 4;
-                            if fifo_current.write_cycle = 0 then
-                                fifo_future.fifo_write <= '0';
-                            end if;
-                        end if;
-                    else
-                        -- MIMO PACKER: STEP 3 of 3
-                        fifo_future.samples_left <= fifo_current.samples_left - 1;
-                    end if;
+            -- Check for valid data
+            write_req := '0';
+            for i in sc'range loop
+                if( sc(i).enable = '1' ) then
+                    write_req := write_req or ss(i).data_v;
                 end if;
-            else
-                fifo_future.fifo_write <= '0';
+            end loop;
+
+            if( write_req = '1' ) then
+                if( fifo_current.units_left = 0 ) then
+                    if( not fifo_enough ) then
+                        -- Overflow: drop sample sets until a buffer fits
+                        fifo_future.dropping <= '1';
+                        return;
+                    end if;
+
+                    -- First sample set of a new buffer
+                    fifo_future.dropping   <= '0';
+                    fifo_future.units_left <= units_per_buf - 1;
+                    fifo_future.meta_write <= meta_en;
+                    fifo_future.meta_ts    <= fifo_current.timestamp_r;
+                else
+                    fifo_future.units_left <= fifo_current.units_left - 1;
+                end if;
+
+                -- MIMO PACKER: STEP 1 of 3
+                if( eight_bit_mode_en = '1' ) then
+                    fifo_future.fifo_data <= pack_eight_bit_mode(sc, ss, fifo_current.fifo_data);
+                elsif( highly_packed_mode_en = '1' ) then
+                    buf_next := pack_sc12q11(sc, ss, fifo_current.fifo_12b_buf);
+                    fifo_future.fifo_12b_buf <= buf_next;
+
+                    case fifo_current.write_cycle is
+                        when 1 =>
+                            fifo_future.fifo_data <= buf_next(fifo_data'length-1 downto 0);
+                        when 2 =>
+                            fifo_future.fifo_data <= buf_next(fifo_data'length-1+16 downto 16);
+                        when 3 =>
+                            fifo_future.fifo_data <= buf_next(fifo_data'length-1+32 downto 32);
+                        when others =>
+                            null;
+                    end case;
+                else
+                    fifo_future.fifo_data <= pack(sc, ss, fifo_current.fifo_data);
+                end if;
+
+                if( fifo_current.samples_left = 0 ) then
+                    fifo_future.samples_left <= NUM_STREAMS - count_enabled_channels(sc);
+                    fifo_future.fifo_write <= '1';
+
+                    if( eight_bit_mode_en = '1' ) then
+                        fifo_future.fifo_write <= fifo_current.eight_bit_delay;
+                        fifo_future.eight_bit_delay <= not fifo_current.eight_bit_delay;
+                    end if;
+
+                    if( highly_packed_mode_en = '1' ) then
+                        fifo_future.write_cycle <= (fifo_current.write_cycle + 1) mod 4;
+                        if fifo_current.write_cycle = 0 then
+                            fifo_future.fifo_write <= '0';
+                        end if;
+                    end if;
+                else
+                    -- MIMO PACKER: STEP 3 of 3
+                    fifo_future.samples_left <= fifo_current.samples_left - 1;
+                end if;
             end if;
         end;
-
-        variable write_req : std_logic := '0';
 
     begin
 
@@ -552,41 +605,11 @@ begin
 
         fifo_future.fifo_clear <= '0';
         fifo_future.fifo_write <= '0';
+        fifo_future.meta_write <= '0';
 
         fifo_future.in_samples_r <= in_samples;
         fifo_future.in_sample_controls_r <= in_sample_controls;
-
-        -- MIMO PACKER: STEP 1 of 3
-        if( packet_en = '0' ) then
-            fifo_future.fifo_data  <= pack(fifo_current.in_sample_controls_r,
-                                           fifo_current.in_samples_r,
-                                           fifo_current.fifo_data);
-
-            if( highly_packed_mode_en = '1' ) then
-                fifo_future.fifo_12b_buf <= pack_sc12q11(
-                    sc => in_sample_controls,
-                    ss => in_samples,
-                    d => fifo_current.fifo_12b_buf
-                );
-
-                if fifo_current.write_cycle = 1 then
-                    fifo_future.fifo_data <= fifo_current.fifo_12b_buf(
-                        fifo_data'length-1 downto fifo_current.fifo_12b_buf'low);
-                elsif fifo_current.write_cycle = 2 then
-                    fifo_future.fifo_data <= fifo_current.fifo_12b_buf(
-                        fifo_data'length-1+16 downto fifo_current.fifo_12b_buf'low+16);
-                elsif fifo_current.write_cycle = 3 then
-                    fifo_future.fifo_data <= fifo_current.fifo_12b_buf(
-                        fifo_data'length-1+32 downto fifo_current.fifo_12b_buf'low+32);
-                end if;
-            end if;
-
-            if( eight_bit_mode_en = '1' ) then
-                fifo_future.fifo_data <= pack_eight_bit_mode(fifo_current.in_sample_controls_r,
-                                                             fifo_current.in_samples_r,
-                                                             fifo_current.fifo_data);
-            end if;
-        end if;
+        fifo_future.timestamp_r <= timestamp;
 
         case fifo_current.state is
 
@@ -606,8 +629,12 @@ begin
                     end if;
                 else
                     fifo_future.fifo_clear <= '1';
-                    fifo_future.eight_bit_delay <= '0';
                 end if;
+
+                fifo_future.eight_bit_delay <= '0';
+                fifo_future.write_cycle     <= 0;
+                fifo_future.units_left      <= 0;
+                fifo_future.dropping        <= '0';
 
             when WRITE_PACKET_PAYLOAD =>
 
@@ -654,38 +681,7 @@ begin
 
             when WRITE_SAMPLES =>
 
-                handle_fifo_write(
-                    fifo_current       => fifo_current,
-                    meta_current       => meta_current,
-                    meta_en            => meta_en,
-                    eight_bit_mode_en  => eight_bit_mode_en,
-                    write_req          => write_req,
-                    fifo_future        => fifo_future
-                );
-
-                if( fifo_full = '1' or ( meta_current.meta_written = '0' and meta_en = '1') ) then
-                    fifo_future.fifo_write <= '0';
-                    fifo_future.state      <= HOLDOFF;
-                    fifo_future.write_cycle <= fifo_current.write_cycle;
-                    fifo_future.fifo_12b_buf <= fifo_current.fifo_12b_buf;
-                end if;
-
-            when HOLDOFF =>
-                fifo_future.write_cycle <= fifo_current.write_cycle;
-                fifo_future.fifo_12b_buf <= fifo_current.fifo_12b_buf;
-                if( fifo_enough ) then
-                    fifo_future.state <= WRITE_SAMPLES;
-
-                    handle_fifo_write(
-                        fifo_current       => fifo_current,
-                        meta_current       => meta_current,
-                        meta_en            => meta_en,
-                        eight_bit_mode_en  => eight_bit_mode_en,
-                        write_req          => write_req,
-                        fifo_future        => fifo_future
-                    );
-
-                end if;
+                accept_samples(fifo_current, fifo_future);
 
             when others =>
 
@@ -719,8 +715,7 @@ begin
             overflow_detected <= '0';
         elsif( rising_edge( clock ) ) then
             overflow_detected <= '0';
-            if( enable = '1' and in_samples(in_samples'low).data_v = '1' and
-                fifo_full = '1' and fifo_current.fifo_clear = '0' ) then
+            if( enable = '1' and fifo_current.dropping = '1' ) then
                 overflow_detected <= '1';
             end if;
         end if;
