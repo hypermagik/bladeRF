@@ -148,6 +148,9 @@ architecture simple of fifo_writer is
 
     signal meta_fifo_used_v_r : unsigned(meta_fifo_usedw'length downto 0) := (others => '0');
     signal fifo_used_v_r      : unsigned(fifo_usedw'length downto 0) := (others => '0');
+    signal fifo_room_thresh   : natural range 0 to 2**fifo_usedw'length := 0;
+    signal fifo_room          : boolean := false;
+    signal meta_room          : boolean := false;
 
 begin
 
@@ -171,35 +174,35 @@ begin
     end process;
 
     -- Calculate whether there's enough room in the destination FIFO
+    --
+    -- This is pipelined over three clock cycles so the comparisons stay short
+    -- enough for the RX clock in OVERSAMPLE mode (245.76 MHz at 122.88 Msps):
+    --   1. register the FIFO fill levels (the dcfifo outputs are not registered)
+    --   2. compare each fill level against its threshold
+    --   3. combine the comparison results
+    -- The thresholds leave a full DMA buffer of sample space and 4 entries of
+    -- meta space, so a couple of cycles of latency cannot overflow either FIFO.
     calc_fifo_free : process( clock, reset )
         constant FIFO_MAX    : natural := 2**fifo_usedw'length;
         constant META_MAX    : natural := 2**meta_fifo_usedw'length;
-        variable fifo_used_v : unsigned(fifo_usedw'length downto 0) := (others => '0');
-        variable meta_fifo_used_v : unsigned(meta_fifo_usedw'length downto 0) := (others => '0');
     begin
         if( reset = '1' ) then
             fifo_enough <= false;
-            fifo_used_v := (others => '0');
+            fifo_room <= false;
+            meta_room <= false;
             meta_fifo_used_v_r <= (others => '0');
             fifo_used_v_r <= (others => '0');
+            fifo_room_thresh <= 0;
         elsif( rising_edge(clock) ) then
-            -- the outputs of the dcfifo are not registered so give the long combinatorial
-            -- data path, let's register the values. one extra clock cycle will not change
-            -- the fidelity of the result. the meta_fifo represents at minimum 204 timestamps.
-            -- there is no way for an off by 1 clock cycle timing to overflow the meta fifo
-            -- when the buffer leaves 4 full meta buffers empty
-            fifo_used_v := unsigned(fifo_full & fifo_usedw);
-            fifo_used_v_r <= fifo_used_v;
-            meta_fifo_used_v := unsigned(meta_fifo_full & meta_fifo_usedw);
-            meta_fifo_used_v_r <= meta_fifo_used_v;
+            fifo_room_thresh   <= FIFO_MAX - dma_buf_size;
 
-            if( fifo_full = '0' and ((FIFO_MAX - fifo_used_v_r) > ( dma_buf_size )) and
-                ( ( meta_en = '1' and meta_fifo_full = '0' and ( META_MAX - 4 ) > meta_fifo_used_v_r )
-                   or (meta_en = '0') ) ) then
-                fifo_enough <= true;
-            else
-                fifo_enough <= false;
-            end if;
+            fifo_used_v_r      <= unsigned(fifo_full & fifo_usedw);
+            meta_fifo_used_v_r <= unsigned(meta_fifo_full & meta_fifo_usedw);
+
+            fifo_room <= fifo_used_v_r < fifo_room_thresh;
+            meta_room <= (META_MAX - 4) > meta_fifo_used_v_r or meta_en = '0';
+
+            fifo_enough <= fifo_room and meta_room;
         end if;
     end process;
 
