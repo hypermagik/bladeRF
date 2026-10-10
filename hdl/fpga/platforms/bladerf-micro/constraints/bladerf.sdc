@@ -22,7 +22,10 @@
 
 # Clock inputs
 create_clock -period "38.4 MHz"  [get_ports c5_clock2]
-create_clock -period "250.0 MHz" [get_ports adi_rx_clock]
+# The AD9361 data clock runs at 2x its normal rate in OVERSAMPLE mode
+# (491.52 MHz at 122.88 Msps, giving a 245.76 MHz RX/TX clock domain), so
+# constrain for that instead of the 250 MHz maximum of normal operation.
+create_clock -period "491.52 MHz" [get_ports adi_rx_clock]
 
 # Generate the appropriate PLL clocks
 derive_pll_clocks
