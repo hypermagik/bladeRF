@@ -188,7 +188,7 @@ package bladerf_p is
 
     constant META_FIFO_RX_WWIDTH    : natural := 128;   -- write side data width
     constant META_FIFO_RX_RWIDTH    : natural := 32;    -- read side data width
-    constant META_FIFO_RX_LENGTH    : natural := 2048;  -- 32-bit words
+    constant META_FIFO_RX_LENGTH    : natural := 32;    -- 128-bit write words
 
     type tx_fifo_t is record
         aclr    :   std_logic;
