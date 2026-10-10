@@ -24,6 +24,7 @@
 #include "board/board.h"
 #include "capabilities.h"
 #include "common.h"
+#include "conversions.h"
 
 
 /******************************************************************************/
@@ -66,6 +67,11 @@ static inline int requires_timestamps(bladerf_format format, bool *required)
     return 0;
 }
 
+/* GPIO bits that select the sample format/framing used by the FPGA */
+#define FORMAT_GPIO_MASK                                    \
+    (BLADERF_GPIO_TIMESTAMP | BLADERF_GPIO_PACKET |         \
+     BLADERF_GPIO_8BIT_MODE | BLADERF_GPIO_HIGHLY_PACKED_MODE)
+
 int perform_format_config(struct bladerf *dev,
                           bladerf_direction dir,
                           bladerf_format format)
@@ -75,7 +81,7 @@ int perform_format_config(struct bladerf *dev,
     struct bladerf2_board_data *board_data = dev->board_data;
     bool use_timestamps, other_using_timestamps;
     bladerf_channel other;
-    uint32_t gpio_val;
+    uint32_t gpio_val, gpio_old;
     int status;
 
     status = requires_timestamps(format, &use_timestamps);
@@ -106,6 +112,7 @@ int perform_format_config(struct bladerf *dev,
     }
 
     CHECK_STATUS(dev->backend->config_gpio_read(dev, &gpio_val));
+    gpio_old = gpio_val;
 
     if (use_timestamps) {
         gpio_val |= BLADERF_GPIO_TIMESTAMP;
@@ -132,6 +139,23 @@ int perform_format_config(struct bladerf *dev,
     }
 
     CHECK_STATUS(dev->backend->config_gpio_write(dev, gpio_val));
+
+    /* If this direction is already enabled (e.g. the module was enabled
+     * before bladerf_stream()), the FPGA has been filling its FIFOs using the
+     * previous format. Restart the backend so the FIFOs are cleared and the
+     * stream starts cleanly in the new format. */
+    if ((gpio_val & FORMAT_GPIO_MASK) != (gpio_old & FORMAT_GPIO_MASK)) {
+        uint32_t reg;
+
+        CHECK_STATUS(dev->backend->rffe_control_read(dev, &reg));
+
+        if (_rffe_dir_enabled(reg, dir)) {
+            log_debug("%s: format changed while %s enabled, resetting FIFOs\n",
+                      __FUNCTION__, direction2str(dir));
+            CHECK_STATUS(dev->backend->enable_module(dev, dir, false));
+            CHECK_STATUS(dev->backend->enable_module(dev, dir, true));
+        }
+    }
 
     board_data->module_format[dir] = format;
 
